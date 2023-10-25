@@ -1,5 +1,15 @@
-defmodule Worker do
+defmodule Metex.Worker do
   @moduledoc false
+
+  def loop do
+    receive do
+      {sender, location} ->
+        send(sender, {:ok, temperature_of(location)})
+      _ ->
+        :ignored
+    end
+    loop()
+  end
 
   def temperature_of(location) do
     result = url_for(location) |> Req.get!() |> parse_response()

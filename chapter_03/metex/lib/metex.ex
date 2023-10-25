@@ -3,16 +3,12 @@ defmodule Metex do
   Documentation for `Metex`.
   """
 
-  @doc """
-  Hello world.
+  def run(cities) when is_list(cities) do
+    coordinator = spawn(Metex.Coordinator, :loop, [[], Enum.count(cities)])
 
-  ## Examples
-
-      iex> Metex.hello()
-      :world
-
-  """
-  def hello do
-    :world
+    Enum.map(cities, fn city ->
+      worker = spawn(Metex.Worker, :loop, [])
+      send(worker, {coordinator, city})
+    end)
   end
 end
