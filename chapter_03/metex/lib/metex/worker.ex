@@ -5,9 +5,11 @@ defmodule Metex.Worker do
     receive do
       {sender, location} ->
         send(sender, {:ok, temperature_of(location)})
+
       _ ->
         :ignored
     end
+
     loop()
   end
 
