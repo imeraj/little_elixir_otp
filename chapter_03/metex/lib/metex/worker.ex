@@ -43,7 +43,5 @@ defmodule Metex.Worker do
     end
   end
 
-  defp api_key do
-    Application.fetch_env!(:metex, :api_key)
-  end
+  defp api_key, do: Application.fetch_env!(:metex, :api_key)
 end
