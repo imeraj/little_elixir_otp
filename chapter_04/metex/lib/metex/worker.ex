@@ -1,5 +1,6 @@
 defmodule Metex.Worker do
   @moduledoc false
+
   use GenServer
 
   @name __MODULE__
@@ -27,7 +28,7 @@ defmodule Metex.Worker do
 
   ## Server Callbacks
   @impl GenServer
-  def init(_args) do
+  def init(:ok) do
     {:ok, %{}}
   end
 
@@ -54,6 +55,12 @@ defmodule Metex.Worker do
 
   def handle_cast(:stop, stats) do
     {:stop, :normal, stats}
+  end
+
+  @impl GenServer
+  def handle_info(msg, stats) do
+    IO.inspect("received #{inspect(msg)}")
+    {:noreply, stats}
   end
 
   @impl GenServer
