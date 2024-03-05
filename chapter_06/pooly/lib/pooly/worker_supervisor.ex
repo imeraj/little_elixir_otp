@@ -1,6 +1,5 @@
 defmodule Pooly.WorkerSupervisor do
   @moduledoc false
-
   use DynamicSupervisor
 
   # API

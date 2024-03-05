@@ -1,6 +1,5 @@
-defmodule Worker do
+defmodule Pooly.Worker do
   @moduledoc false
-
   use GenServer
 
   # API
