@@ -5,16 +5,30 @@ defmodule Pooly.Server do
   alias Pooly.WorkerSupervisor
 
   defmodule State do
-    defstruct sup: nil, worker_sup: nil, size: nil, mfa: nil, workers: nil
+    defstruct sup: nil, worker_sup: nil, size: nil, mfa: nil, workers: nil, monitors: nil
   end
 
   def start_link(sup, pool_config) do
     GenServer.start_link(__MODULE__, [sup, pool_config], name: __MODULE__)
   end
 
+  def checkout do
+    GenServer.call(__MODULE__, :checkout)
+  end
+
+  def checkin(worker_pid) do
+    GenServer.cast(__MODULE__, {:checkin, worker_pid})
+  end
+
+  def status do
+    GenServer.call(__MODULE__, :status)
+  end
+
   # callbacks
+  @impl GenServer
   def init([sup, pool_config]) when is_pid(sup) do
-    init(pool_config, %State{sup: sup})
+    monitors = :ets.new(:monitors, [:private])
+    init(pool_config, %State{sup: sup, monitors: monitors})
   end
 
   defp init([{:mfa, mfa} | rest], state) do
@@ -34,6 +48,42 @@ defmodule Pooly.Server do
     {:ok, state}
   end
 
+  @impl GenServer
+  def handle_call(:checkout, {from_pid, _ref}, state) do
+    %{workers: workers, monitors: monitors} = state
+
+    case workers do
+      [worker | rest] ->
+        ref = Process.monitor(from_pid)
+        true = :ets.insert(monitors, {worker, ref})
+        {:reply, worker, %{state | workers: rest}}
+
+      [] ->
+        {:reply, :noproc, state}
+    end
+  end
+
+  def handle_call(:status, _from, state) do
+    %{workers: workers, monitors: monitors} = state
+    {:reply, {length(workers), :ets.info(monitors, :size)}, state}
+  end
+
+  @impl GenServer
+  def handle_cast({:checkin, worker}, state) do
+    %{workers: workers, monitors: monitors} = state
+
+    case :ets.lookup(monitors, worker) do
+      [{^worker, ref}] ->
+        true = Process.demonitor(ref)
+        true = :ets.delete(monitors, worker)
+        {:noreply, %{state | workers: [worker | workers]}}
+
+      [] ->
+        {:noreply, state}
+    end
+  end
+
+  @impl GenServer
   def handle_info(:start_worker_supervisor, state) do
     %{sup: sup, size: size} = state
 

@@ -4,6 +4,10 @@ defmodule Pooly do
 
   @pool_config [mfa: {Pooly.Worker, :start_link, []}, size: 5]
 
+  defdelegate checkout, to: Pooly.Server
+  defdelegate checkin(worker_pid), to: Pooly.Server
+  defdelegate status, to: Pooly.Server
+
   def start(_type, _arg) do
     start_pool(@pool_config)
   end
