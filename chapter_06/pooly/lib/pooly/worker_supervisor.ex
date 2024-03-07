@@ -8,7 +8,7 @@ defmodule Pooly.WorkerSupervisor do
   end
 
   def start_child({m, f, a}) do
-    spec = %{id: Worker, start: {m, f, a}}
+    spec = %{id: Worker, start: {m, f, a}, restart: :temporary}
     DynamicSupervisor.start_child(__MODULE__, spec)
   end
 

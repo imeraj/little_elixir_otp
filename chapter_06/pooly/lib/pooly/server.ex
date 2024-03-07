@@ -27,6 +27,7 @@ defmodule Pooly.Server do
   # callbacks
   @impl GenServer
   def init([sup, pool_config]) when is_pid(sup) do
+    Process.flag(:trap_exit, true)
     monitors = :ets.new(:monitors, [:private])
     init(pool_config, %State{sup: sup, monitors: monitors})
   end
@@ -101,6 +102,37 @@ defmodule Pooly.Server do
     {:noreply, %{state | worker_sup: worker_sup, workers: workers}}
   end
 
+  # handle consumer DOWN
+  def handle_info({:DOWN, ref, _, _, _}, state) do
+    %{workers: workers, monitors: monitors} = state
+
+    case :ets.match(monitors, {:"$1", ref}) do
+      [[worker]] ->
+        true = :ets.delete(monitors, worker)
+        new_state = %{state | workers: [worker | workers]}
+        {:noreply, new_state}
+
+      _ ->
+        {:noreply, state}
+    end
+  end
+
+  # Handle worker EXIT
+  def handle_info({:EXIT, pid, _reason}, state) do
+    %{workers: workers, mfa: mfa, monitors: monitors} = state
+
+    case :ets.lookup(monitors, pid) do
+      [{^pid, ref}] ->
+        true = Process.demonitor(ref)
+        true = :ets.delete(monitors, pid)
+        new_state = %{state | workers: [new_worker(mfa) | workers]}
+        {:noreply, new_state}
+
+      _ ->
+        {:noreply, state}
+    end
+  end
+
   # private functions
   defp prepopulate(size, sup, state) do
     do_prepopulate(size, sup, state.mfa, [])
@@ -116,6 +148,7 @@ defmodule Pooly.Server do
 
   defp new_worker(mfa) do
     {:ok, worker} = WorkerSupervisor.start_child(mfa)
+    Process.link(worker)
     worker
   end
 end
