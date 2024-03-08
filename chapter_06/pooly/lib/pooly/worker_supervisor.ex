@@ -3,13 +3,13 @@ defmodule Pooly.WorkerSupervisor do
   use DynamicSupervisor
 
   # API
-  def start_link do
-    DynamicSupervisor.start_link(__MODULE__, [], name: __MODULE__)
+  def start_link(name) do
+    DynamicSupervisor.start_link(__MODULE__, [], name: :"#{name}WorkerSupervisor")
   end
 
-  def start_child({m, f, a}) do
+  def start_child(sup, {m, f, a}) do
     spec = %{id: Worker, start: {m, f, a}, restart: :temporary}
-    DynamicSupervisor.start_child(__MODULE__, spec)
+    DynamicSupervisor.start_child(sup, spec)
   end
 
   # callbacks

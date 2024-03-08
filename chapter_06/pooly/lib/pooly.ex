@@ -2,17 +2,23 @@ defmodule Pooly do
   @moduledoc false
   use Application
 
-  @pool_config [mfa: {Pooly.Worker, :start_link, []}, size: 5]
+  alias Pooly.Worker
 
-  defdelegate checkout, to: Pooly.Server
-  defdelegate checkin(worker_pid), to: Pooly.Server
-  defdelegate status, to: Pooly.Server
+  @pools_config [
+    [name: "Pool1", mfa: {Worker, :start_link, []}, size: 2],
+    [name: "Pool2", mfa: {Worker, :start_link, []}, size: 3],
+    [name: "Pool3", mfa: {Worker, :start_link, []}, size: 4]
+  ]
+
+  defdelegate checkout(pool_name), to: Pooly.Server
+  defdelegate checkin(pool_name, worker_pid), to: Pooly.Server
+  defdelegate status(pool_name), to: Pooly.Server
 
   def start(_type, _arg) do
-    start_pool(@pool_config)
+    start_pool(@pools_config)
   end
 
-  defp start_pool(pool_config) do
-    Pooly.Supervisor.start_link(pool_config)
+  defp start_pool(pools_config) do
+    Pooly.Supervisor.start_link(pools_config)
   end
 end
