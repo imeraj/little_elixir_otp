@@ -9,7 +9,9 @@ defmodule Pooly.PoolServer do
               size: nil,
               mfa: nil,
               workers: nil,
-              monitors: nil
+              monitors: nil,
+              overflow: 0,
+              max_overflow: 0
   end
 
   def start_link(pool_sup, pool_config) do
@@ -48,6 +50,10 @@ defmodule Pooly.PoolServer do
     init(rest, %{state | size: size})
   end
 
+  defp init([{:max_overflow, max_overflow} | rest], state) do
+    init(rest, %{state | max_overflow: max_overflow})
+  end
+
   defp init([_ | rest], state) do
     init(rest, state)
   end
@@ -59,7 +65,14 @@ defmodule Pooly.PoolServer do
 
   @impl GenServer
   def handle_call(:checkout, {from_pid, _ref}, state) do
-    %{workers: workers, monitors: monitors} = state
+    %{
+      workers: workers,
+      monitors: monitors,
+      overflow: overflow,
+      max_overflow: max_overflow,
+      worker_sup: worker_sup,
+      mfa: mfa
+    } = state
 
     case workers do
       [worker | rest] ->
@@ -67,25 +80,32 @@ defmodule Pooly.PoolServer do
         true = :ets.insert(monitors, {worker, ref})
         {:reply, worker, %{state | workers: rest}}
 
+      [] when overflow >= 0 and overflow < max_overflow ->
+        ref = Process.monitor(from_pid)
+        worker = new_worker(worker_sup, mfa)
+        true = :ets.insert(monitors, {worker, ref})
+        {:reply, worker, %{state | overflow: overflow + 1}}
+
       [] ->
-        {:reply, :noproc, state}
+        {:reply, :full, state}
     end
   end
 
   def handle_call(:status, _from, state) do
     %{workers: workers, monitors: monitors} = state
-    {:reply, {length(workers), :ets.info(monitors, :size)}, state}
+    {:reply, {state_name(state), length(workers), :ets.info(monitors, :size)}, state}
   end
 
   @impl GenServer
   def handle_cast({:checkin, worker}, state) do
-    %{workers: workers, monitors: monitors} = state
+    %{monitors: monitors} = state
 
     case :ets.lookup(monitors, worker) do
       [{^worker, ref}] ->
         true = Process.demonitor(ref)
         true = :ets.delete(monitors, worker)
-        {:noreply, %{state | workers: [worker | workers]}}
+        new_state = handle_checkin(worker, state)
+        {:noreply, new_state}
 
       [] ->
         {:noreply, state}
@@ -136,13 +156,15 @@ defmodule Pooly.PoolServer do
   # Handle worker EXIT
   def handle_info(
         {:EXIT, pid, _reason},
-        %{monitors: monitors, workers: workers, worker_sup: worker_sup, mfa: mfa} = state
+        state
       ) do
+    %{monitors: monitors} = state
+
     case :ets.lookup(monitors, pid) do
       [{^pid, ref}] ->
         true = Process.demonitor(ref)
         true = :ets.delete(monitors, pid)
-        new_state = %{state | workers: [new_worker(worker_sup, mfa) | workers]}
+        new_state = handle_worker_exit(state)
         {:noreply, new_state}
 
       _ ->
@@ -178,4 +200,49 @@ defmodule Pooly.PoolServer do
   defp name(pool_name) do
     :"#{pool_name}Server"
   end
+
+  defp handle_checkin(worker, state) do
+    %{workers: workers, overflow: overflow, worker_sup: worker_sup} = state
+
+    if overflow > 0 do
+      :ok = dismiss_worker(worker_sup, worker)
+      %{state | overflow: overflow - 1}
+    else
+      %{state | workers: [worker | workers], overflow: 0}
+    end
+  end
+
+  defp handle_worker_exit(state) do
+    %{workers: workers, worker_sup: worker_sup, mfa: mfa, overflow: overflow} = state
+
+    if overflow > 0 do
+      %{state | overflow: overflow - 1}
+    else
+      %{state | workers: [new_worker(worker_sup, mfa) | workers]}
+    end
+  end
+
+  defp dismiss_worker(worker_sup, worker) do
+    Process.unlink(worker)
+    DynamicSupervisor.terminate_child(worker_sup, worker)
+  end
+
+  defp state_name(%State{overflow: overflow} = state) when overflow < 1 do
+    %{workers: workers, max_overflow: max_overflow} = state
+
+    case length(workers) == 0 do
+      true ->
+        if max_overflow < 1 do
+          :full
+        else
+          :overflow
+        end
+
+      false ->
+        :ready
+    end
+  end
+
+  defp state_name(%State{overflow: max_overflow, max_overflow: max_overflow}), do: :full
+  defp state_name(_state), do: :overflow
 end

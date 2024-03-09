@@ -5,9 +5,9 @@ defmodule Pooly do
   alias Pooly.Worker
 
   @pools_config [
-    [name: "Pool1", mfa: {Worker, :start_link, []}, size: 2],
-    [name: "Pool2", mfa: {Worker, :start_link, []}, size: 3],
-    [name: "Pool3", mfa: {Worker, :start_link, []}, size: 4]
+    [name: "Pool1", mfa: {Worker, :start_link, []}, size: 2, max_overflow: 3],
+    [name: "Pool2", mfa: {Worker, :start_link, []}, size: 3, max_overflow: 1],
+    [name: "Pool3", mfa: {Worker, :start_link, []}, size: 4, max_overflow: 1]
   ]
 
   defdelegate checkout(pool_name), to: Pooly.Server
