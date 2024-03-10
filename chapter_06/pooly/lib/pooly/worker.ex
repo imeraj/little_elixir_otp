@@ -7,6 +7,10 @@ defmodule Pooly.Worker do
     GenServer.start_link(__MODULE__, :ok, [])
   end
 
+  def work_for(worker, duration) do
+    GenServer.cast(worker, {:work_for, duration})
+  end
+
   def stop(pid) when is_pid(pid) do
     GenServer.call(pid, :stop)
   end
@@ -14,6 +18,11 @@ defmodule Pooly.Worker do
   # callbacks
   def init(:ok) do
     {:ok, []}
+  end
+
+  def handle_cast({:work_for, duration}, state) do
+    :timer.sleep(duration)
+    {:stop, :normal, state}
   end
 
   def handle_call(:stop, _from, state) do

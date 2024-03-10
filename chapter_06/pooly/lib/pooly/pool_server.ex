@@ -11,18 +11,20 @@ defmodule Pooly.PoolServer do
               workers: nil,
               monitors: nil,
               overflow: 0,
-              max_overflow: 0
+              max_overflow: 0,
+              wait_queue: nil,
+              reply_ref: nil
   end
 
   def start_link(pool_sup, pool_config) do
     GenServer.start_link(__MODULE__, [pool_sup, pool_config], name: name(pool_config[:name]))
   end
 
-  def checkout(pool_name) do
-    GenServer.call(name(pool_name), :checkout)
+  def checkout(pool_name, block, timeout) do
+    GenServer.call(name(pool_name), {:checkout, block}, timeout)
   end
 
-  def checking(pool_name, worker_pid) do
+  def checkin(pool_name, worker_pid) do
     GenServer.cast(name(pool_name), {:checkin, worker_pid})
   end
 
@@ -34,8 +36,9 @@ defmodule Pooly.PoolServer do
   @impl GenServer
   def init([pool_sup, pool_config]) when is_pid(pool_sup) do
     Process.flag(:trap_exit, true)
+    wait_queue = :queue.new()
     monitors = :ets.new(:monitors, [:private])
-    init(pool_config, %State{pool_sup: pool_sup, monitors: monitors})
+    init(pool_config, %State{pool_sup: pool_sup, monitors: monitors, wait_queue: wait_queue})
   end
 
   defp init([{:name, name} | rest], state) do
@@ -64,14 +67,15 @@ defmodule Pooly.PoolServer do
   end
 
   @impl GenServer
-  def handle_call(:checkout, {from_pid, _ref}, state) do
+  def handle_call({:checkout, block}, {from_pid, reply_ref}, state) do
     %{
       workers: workers,
       monitors: monitors,
       overflow: overflow,
       max_overflow: max_overflow,
       worker_sup: worker_sup,
-      mfa: mfa
+      mfa: mfa,
+      wait_queue: wait_queue
     } = state
 
     case workers do
@@ -85,6 +89,11 @@ defmodule Pooly.PoolServer do
         worker = new_worker(worker_sup, mfa)
         true = :ets.insert(monitors, {worker, ref})
         {:reply, worker, %{state | overflow: overflow + 1}}
+
+      [] when block == true ->
+        ref = Process.monitor(from_pid)
+        wait_queue = :queue.in({from_pid, ref, reply_ref}, wait_queue)
+        {:noreply, %{state | wait_queue: wait_queue}, :infinity}
 
       [] ->
         {:reply, :full, state}
@@ -202,23 +211,53 @@ defmodule Pooly.PoolServer do
   end
 
   defp handle_checkin(worker, state) do
-    %{workers: workers, overflow: overflow, worker_sup: worker_sup} = state
+    %{
+      workers: workers,
+      monitors: monitors,
+      overflow: overflow,
+      worker_sup: worker_sup,
+      wait_queue: wait_queue
+    } =
+      state
 
-    if overflow > 0 do
-      :ok = dismiss_worker(worker_sup, worker)
-      %{state | overflow: overflow - 1}
-    else
-      %{state | workers: [worker | workers], overflow: 0}
+    case :queue.out(wait_queue) do
+      {{:value, {pid, ref, reply_ref}}, left} ->
+        true = :ets.insert(monitors, {worker, ref})
+        GenServer.reply({pid, reply_ref}, worker)
+        %{state | wait_queue: left}
+
+      {:empty, empty} when overflow > 0 ->
+        :ok = dismiss_worker(worker_sup, worker)
+        %{state | wait_queue: empty, overflow: overflow - 1}
+
+      {:empty, empty} ->
+        %{state | workers: [worker | workers], overflow: 0, wait_queue: empty}
     end
   end
 
   defp handle_worker_exit(state) do
-    %{workers: workers, worker_sup: worker_sup, mfa: mfa, overflow: overflow} = state
+    %{
+      workers: workers,
+      worker_sup: worker_sup,
+      mfa: mfa,
+      overflow: overflow,
+      wait_queue: wait_queue,
+      monitors: monitors
+    } = state
 
-    if overflow > 0 do
-      %{state | overflow: overflow - 1}
-    else
-      %{state | workers: [new_worker(worker_sup, mfa) | workers]}
+    case :queue.out(wait_queue) do
+      {{:value, {pid, ref, reply_ref}}, left} ->
+        new_worker = new_worker(worker_sup, mfa)
+        true = :ets.insert(monitors, {new_worker, ref})
+        GenServer.reply({pid, reply_ref}, new_worker)
+        %{state | wait_queue: left}
+
+      {:empty, empty} when overflow > 0 ->
+        %{state | wait_queue: empty, overflow: overflow - 1}
+
+      {:empty, empty} ->
+        new_worker = new_worker(worker_sup, mfa)
+        %{state | workers: [new_worker | workers], overflow: 0, wait_queue: empty}
     end
   end
 

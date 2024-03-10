@@ -4,13 +4,15 @@ defmodule Pooly do
 
   alias Pooly.Worker
 
+  @timeout 5_000
+
   @pools_config [
     [name: "Pool1", mfa: {Worker, :start_link, []}, size: 2, max_overflow: 3],
     [name: "Pool2", mfa: {Worker, :start_link, []}, size: 3, max_overflow: 1],
     [name: "Pool3", mfa: {Worker, :start_link, []}, size: 4, max_overflow: 1]
   ]
 
-  defdelegate checkout(pool_name), to: Pooly.Server
+  defdelegate checkout(pool_name, block \\ true, timeout \\ @timeout), to: Pooly.Server
   defdelegate checkin(pool_name, worker_pid), to: Pooly.Server
   defdelegate status(pool_name), to: Pooly.Server
 
