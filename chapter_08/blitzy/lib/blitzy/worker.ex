@@ -5,6 +5,8 @@ defmodule Blitzy.Worker do
   require Logger
 
   def start(url) do
+    IO.puts("Running on node-#{node()}")
+
     try do
       {timestamp, response} = Duration.measure(fn -> Req.get!(url) end)
       handle_response({Duration.to_milliseconds(timestamp), response})

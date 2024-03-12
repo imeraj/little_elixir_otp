@@ -7,14 +7,16 @@ defmodule Blitzy.MixProject do
       version: "0.1.0",
       elixir: "~> 1.16",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      escript: [main_module: CLI]
     ]
   end
 
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger]
+      mod: {Blitzy, []},
+      extra_applications: [:logger, :wx, :observer, :runtime_tools]
     ]
   end
 
@@ -22,8 +24,7 @@ defmodule Blitzy.MixProject do
   defp deps do
     [
       {:req, "~> 0.4.13"},
-      {:timex, "~> 3.7"},
-      {:tzdata, "~> 1.1"}
+      {:timex, "~> 3.7"}
     ]
   end
 end

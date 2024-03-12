@@ -1,11 +1,29 @@
 defmodule Blitzy do
   @moduledoc false
+  use Application
+
+  def start(_type, _args) do
+    Blitzy.Supervisor.start_link()
+  end
 
   def run(n_workers, url) when n_workers > 0 do
     worker_fun = fn -> Blitzy.Worker.start(url) end
 
     1..n_workers
     |> Enum.map(fn _ -> Task.async(worker_fun) end)
+    |> Enum.map(&Task.await(&1, :infinity))
+    |> parse_results()
+  end
+
+  def run(n_requests, url, nodes) do
+    Enum.map(1..n_requests, fn _ ->
+      Task.Supervisor.async(
+        {Blitzy.TasksSupervisor, Enum.random(nodes)},
+        Blitzy.Worker,
+        :start,
+        [url]
+      )
+    end)
     |> Enum.map(&Task.await(&1, :infinity))
     |> parse_results()
   end
