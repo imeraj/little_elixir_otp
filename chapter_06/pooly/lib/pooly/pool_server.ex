@@ -271,7 +271,7 @@ defmodule Pooly.PoolServer do
   defp state_name(%State{overflow: overflow} = state) when overflow < 1 do
     %{workers: workers, max_overflow: max_overflow} = state
 
-    case length(workers) == [] do
+    case workers == [] do
       true ->
         if max_overflow < 1 do
           :full
