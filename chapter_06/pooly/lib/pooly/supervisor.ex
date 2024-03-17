@@ -2,8 +2,8 @@ defmodule Pooly.Supervisor do
   @moduledoc false
   use Supervisor
 
-  alias Pooly.Server
   alias Pooly.PoolsSupervisor
+  alias Pooly.Server
 
   # API
   def start_link(pools_config) do
