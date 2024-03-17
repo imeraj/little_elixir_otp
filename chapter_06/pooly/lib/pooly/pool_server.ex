@@ -3,6 +3,8 @@ defmodule Pooly.PoolServer do
   use GenServer
 
   defmodule State do
+    @moduledoc false
+
     defstruct pool_sup: nil,
               worker_sup: nil,
               name: nil,
@@ -269,7 +271,7 @@ defmodule Pooly.PoolServer do
   defp state_name(%State{overflow: overflow} = state) when overflow < 1 do
     %{workers: workers, max_overflow: max_overflow} = state
 
-    case length(workers) == 0 do
+    case length(workers) == [] do
       true ->
         if max_overflow < 1 do
           :full
